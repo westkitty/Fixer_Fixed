@@ -1,0 +1,87 @@
+name: Build macOS Release
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  validate:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show Swift version
+        run: swift --version
+
+      - name: Verify forbidden source strings are absent
+        run: |
+          matches="$(grep -RInaE 'FIXER_BUG_REPORT_TOKEN|FIXER_BUG_REPORT_ENDPOINT|Bearer |railway|1132-bug-report' Sources scripts README.md || true)"
+          if [[ -n "$matches" ]]; then
+            echo "$matches"
+            exit 1
+          fi
+
+      - name: Run tests
+        run: swift test
+
+      - name: Build release configuration
+        run: swift build -c release
+
+  build-unsigned:
+    if: github.event_name != 'pull_request'
+    needs: validate
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build unsigned CI ZIP
+        env:
+          APP_BUILD: ${{ github.run_number }}
+        run: scripts/build-ci-zip.sh
+
+      - name: Upload unsigned artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fixer-fixed-macos-unsigned
+          path: |
+            dist/*.zip
+            dist/SHA256SUMS.txt
+
+  build-signed:
+    if: >
+      github.event_name != 'pull_request' &&
+      secrets.APPLE_CERTIFICATE_BASE64 != '' &&
+      secrets.APPLE_CERTIFICATE_PASSWORD != '' &&
+      secrets.APPLE_TEAM_ID != '' &&
+      secrets.APPLE_ID != '' &&
+      secrets.APPLE_APP_SPECIFIC_PASSWORD != '' &&
+      secrets.DEVELOPER_ID_APPLICATION != ''
+    needs: validate
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build signed and notarized CI ZIP
+        env:
+          APP_BUILD: ${{ github.run_number }}
+          SIGN_IDENTITY: ${{ secrets.DEVELOPER_ID_APPLICATION }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          NOTARIZE: "1"
+        run: scripts/build-ci-zip.sh
+
+      - name: Upload signed artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fixer-fixed-macos-signed
+          path: |
+            dist/*signed.zip
+            dist/SHA256SUMS.txt
