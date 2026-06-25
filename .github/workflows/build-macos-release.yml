@@ -1,0 +1,46 @@
+name: Build macOS Release
+
+on:
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show Swift version
+        run: swift --version
+
+      - name: Verify forbidden source strings are absent
+        run: |
+          matches="$(grep -RInaE 'FIXER_BUG_REPORT_TOKEN|FIXER_BUG_REPORT_ENDPOINT|Bearer |railway|1132-bug-report' Sources scripts README.md || true)"
+          if [[ -n "$matches" ]]; then
+            echo "$matches"
+            exit 1
+          fi
+
+      - name: Run tests
+        run: swift test
+
+      - name: Build release configuration
+        run: swift build -c release
+
+  build-unsigned:
+    needs: validate
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build unsigned CI ZIP
+        env:
+          APP_BUILD: ${{ github.run_number }}
+        run: scripts/build-ci-zip.sh
+
+      - name: Upload unsigned artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fixer-fixed-macos-unsigned
+          path: |
+            dist/*.zip
+            dist/SHA256SUMS.txt
