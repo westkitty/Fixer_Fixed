@@ -38,7 +38,7 @@ jobs:
         run: scripts/build-ci-zip.sh
 
       - name: Upload unsigned artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: fixer-fixed-macos-unsigned
           path: |
